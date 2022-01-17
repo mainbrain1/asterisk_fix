@@ -1,0 +1,61 @@
+local conference = function(context, extension)
+	exten = extension
+	name = channel.CALLERID("number"):get()
+	id = channel.CHANNEL("uniqueid"):get()
+	date = os.date("%Y-%m-%d----%X")
+	date = string.gsub(date, ":", "-");
+	fname = "[" .. id .. "]" .. "-[" .. date .. "]-[" .. name .. "----" .. extension .. "]"
+	dir = "/var/calls/"
+	--channel["MEETME_RECORDINGFILE"]=dir..fname
+	--channel["MEETME_RECORDINGFORMAT"]="wav"
+	--my=channel["MEETME_RECORDINGFILE"]:get()
+	--app.noop(my)
+	fromconf = 1
+	require('config.lua')
+	local driver = require "luasql.mysql"
+	local env = assert(driver.mysql())
+	sql_conf = "SELECT * from confbridge where number=" .. extension
+	local con_conf = assert(env:connect(my_dbname, my_dbuser, my_dbpass, my_dbhost, my_dbport));
+	local cur_conf = assert(con_conf:execute(sql_conf));
+	local row = cur_conf:fetch({}, "a")
+	cur_conf:close()
+	con_conf:close()
+	env:close()
+	
+	if row and row.password ~= null then
+		app.noop(row.password)
+		app.noop(row.admin)
+		app.noop(row.users)
+		local users = row.users
+		local driver = require "luasql.mysql"
+		local env = assert(driver.mysql())
+		local con_conf = assert(env:connect(my_dbname, my_dbuser, my_dbpass, my_dbhost, my_dbport));
+		local res = assert(con_conf:execute(string.format([[UPDATE confbridge SET users = users + 1 WHERE number = '%s']], extension)));
+		cur_conf:close()
+		con_conf:close()
+		env:close()
+		recordname_conf2 = record(extension)
+		app.answer()
+		app.authenticate(row.password)
+		app.confbridge(extension,"default_bridge","default_user","sample_user_menu")
+		
+		else
+		app.noop("Autocreating new conference")
+		password = math.random(1111, 9999)
+		count = 1
+		local driver = require "luasql.mysql"
+		local env = assert(driver.mysql())
+		local con_conf = assert(env:connect(my_dbname, my_dbuser, my_dbpass, my_dbhost, my_dbport));
+		local res = assert(con_conf:execute(string.format([[INSERT INTO confbridge VALUES ('%s', '%s', '%s', '%s' , '%s')]], 0, extension, name, password, count)));
+		cur_conf:close()
+		con_conf:close()
+		env:close()
+		recordname_conf = record(extension)
+		app.answer()
+		app.wait(1)
+		app.playback("vm-password")
+		app.SayDigits(password)
+		app.wait(1)
+		app.confbridge(extension,"default_bridge","default_user","sample_admin_menu")
+	end;
+end;
