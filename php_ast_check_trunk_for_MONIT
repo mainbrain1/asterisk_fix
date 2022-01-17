@@ -1,0 +1,31 @@
+<?php
+	
+	$string_exec_check="/usr/sbin/asterisk -rx 'sip show registry' | sed '/SIP registrations./d' | sed '/Host                                    dnsmgr Username       Refresh State                Reg.Time/d' | sed '/Unable to set high priority/d'";
+	$string_exec_var=exec($string_exec_check,$output,$retval);
+	$status=array( 1=>false, 2=>false );
+	
+	foreach ($output as $value)
+	{	
+		if (strpos($value,"No Authentication")) {
+			$status[1]=true;
+		}
+		if (strpos($value,"Request Sent")) {
+			$status[2]=true;
+		}
+		if (strpos($value,"Unregistered")) {
+			$status[1]=true;
+		}
+	}
+	
+	var_dump($output);
+	
+	if($status[1]==true){
+		exit(1);
+	}
+	if($status[2]==true){
+		exit(2);
+	}
+	
+	exit(0);
+	
+?>
