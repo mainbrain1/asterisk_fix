@@ -1,0 +1,76 @@
+#!/usr/bin/php -q
+<?php
+	
+	$myacc=$_SERVER["argv"][1];
+	$name=$_SERVER["argv"][3];
+	$term=$_SERVER["argv"][2];    
+	
+	$name2 = "/scripts/tmp/fax/".$name;
+	$string_exec='/usr/bin/nice -n 19 /usr/bin/ionice -c3 /usr/bin/convert -units PixelsPerInch -define quantum:polarity=min-is-white -rotate "90>"  -density 204x196 -resize 1728x -compress Group4 -type bilevel -monochrome  '.$name2."   ".$name2.".tif";
+	exec ($string_exec);
+	
+	unlink($name2);
+	$timeout=15;
+	$socket = fsockopen("127.0.0.1","5038", $errno, $errstr, $timeout);
+	fputs($socket, "Action: Login\r\n");
+	fputs($socket, "UserName: admin\r\n");
+	fputs($socket, "Secret: 32342342342\r\n");
+	fputs($socket, "Events: on\r\n\r\n");
+	sleep(2);
+	
+	//usleep(30000);
+	
+	
+	echo $term;
+	echo "/n";
+	echo $myacc;
+	
+	
+	require_once '/var/www/admin/conf.inc.php';
+	$connect = mysqli_connect($host,$user,$pw, $db);
+	if (!$connect) {
+		die('Ошибка соединения: ' . mysqli_error());
+	}
+	
+	$sql = "select `accountcode`,`fullname` from `sip_buddies` where `name` = '$myacc'";
+	$result_sql = mysqli_query($connect,$sql);
+
+	$num_sql = mysqli_fetch_row($result_sql);
+	$num_sql1 = $num_sql[0];
+	$name_sql = $num_sql[1];
+	
+	echo $name_sql;
+	fputs($socket, "Action: Originate\r\n");
+	fputs($socket, "Account: $num_sql1\r\n");
+	fputs($socket, "ActionID: $name\r\n");
+	fputs($socket, "Channel: SIP/$myacc\r\n");
+	fputs($socket, "Context: DLPN_dialplan_ext\r\n");
+	fputs($socket, "Async: true\r\n");
+	fputs($socket, "Exten: $term\r\n");
+	fputs($socket, "Priority: 1\r\n");
+	
+	fputs($socket, "Callerid: $myacc-$term-$name<$myacc>\r\n\r\n");
+	sleep(2);
+	
+	
+	while (!feof($socket)) {
+		$wrets = fread($socket, 8192);
+		
+		$fax=preg_match("/Event: OriginateResponse/", $wrets);
+
+		if ($fax) {
+		
+			echo "CALL INIT";
+			fputs($socket, "Action: Logoff\r\n\r\n");
+			sleep(2);
+			
+			break;
+			
+		}
+		
+	}
+	
+	fclose($socket);
+	
+	exit(0);
+?>
