@@ -1,0 +1,55 @@
+local fax_func = function(context, extension)
+	local id = channel.CHANNEL("uniqueid"):get()
+	local name = channel.CHANNEL("name"):get()
+	date = os.date("%Y-%m-%d----%X")
+	date = string.gsub(date, ":", "-");
+	logger("INCOMING FAX DETECTED FROM    ", name_inc)
+	logger("CHANNEL NAME    ", name)
+	--logger("TO EXT    ",oldexten)
+	logger("FROM TRUNK    ", ext_inc)
+	logger("context    ", context)
+	logger("extension    ", extension)
+	faxdest = "/var/fax"
+	local tempfax = string.format("%s/[%s]-[%s]-[%s]", faxdest, id, date, name_inc)
+	local tempfax_cut = string.format("[%s]-[%s]-[%s]", id, date, name_inc)
+	require('config.lua')
+	local driver = require "luasql.mysql"
+	local env = assert(driver.mysql())
+	local sql_fax = "SELECT faxemail,faxdir,faxuser,faxpass,faxopt from sip_trunks where number=" .. ext_inc
+	local con_fax = assert(env:connect(my_dbname, my_dbuser, my_dbpass, my_dbhost, my_dbport));
+	local cur_fax = assert(con_fax:execute(sql_fax));
+	local row = cur_fax:fetch({}, "a")
+	cur_fax:close()
+	con_fax:close()
+	env:close()
+	local faxdir = row.faxdir
+	local faxuser = row.faxuser
+	local faxpass = row.faxpass
+	local faxopt = row.faxopt
+	local mailbox = row.faxemail
+
+	app.ReceiveFax(tempfax .. ".tif", "d")
+	-- 
+	
+	local monopt_fax_prepare = string.format("/usr/bin/nice -n 19 /usr/bin/ionice -c3 /usr/bin/tiff2pdf -o %s.pdf %s.tif && rm -f %s.tif && ",tempfax, tempfax, tempfax)
+	local monopt_fax_mail = string.format("/usr/bin/mpack -s '[Asterisk]: Принят факс c номера %s.' %s.pdf %s ", name_inc, tempfax, mailbox)
+	local monopt_fax_folder = string.format("/usr/bin/smbclient %s -U %s --pass %s -c 'put %s.pdf %s.pdf' ", faxdir, faxuser, faxpass, tempfax, tempfax_cut)
+	local monopt_fax_log = string.format(" >/tmp/receiveFAX[%s].log 2>&1 &",tempfax_cut)
+	
+	if faxopt == "mail" then
+		app.system(monopt_fax_prepare..monopt_fax_mail..monopt_fax_log)
+	end;
+	
+	if faxopt == "folder" and faxdir ~= "" and faxuser ~= "" and faxpass ~= "" then
+		app.system(monopt_fax_prepare..monopt_fax_folder..monopt_fax_log)
+	end;
+	
+	if faxopt == "all" and faxdir ~= "" and faxuser ~= "" and faxpass ~= "" then
+		app.system(monopt_fax_prepare..monopt_fax_mail.." && "..monopt_fax_folder..monopt_fax_log)
+	end;
+	
+	local my1 = channel["SYSTEMSTATUS"]:get()
+	logger("FAX TIFF CONVERTED TO PDF AND TRANSFER FINISHED WITH STATUS    ", my1)
+	--local status = channel.CHANNEL("FAXSTATUS"):get()
+	--logger("FAX RECEIVED WITH STATUS    ",status)
+end;
