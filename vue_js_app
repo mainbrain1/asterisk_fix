@@ -1,0 +1,781 @@
+// main.js
+
+
+
+import Vue from 'vue'
+import Router from 'vue-router'
+import App from './App.vue'
+import Users from './Users.vue'
+import Table from './Table.vue'
+import Status from './Status.vue'
+//import Login from './Login.vue'
+import { BootstrapVue, IconsPlugin } from 'bootstrap-vue'
+Vue.use(Router)
+
+// Import Bootstrap an BootstrapVue CSS files (order is important)
+import 'bootstrap/dist/css/bootstrap.css'
+import 'bootstrap-vue/dist/bootstrap-vue.css'
+
+// Make BootstrapVue available throughout your project
+Vue.use(BootstrapVue)
+// Optionally install the BootstrapVue icon components plugin
+Vue.use(IconsPlugin)
+
+
+Users.data()
+Vue.config.productionTip = false
+const router = new Router({
+  routes: [
+    {
+      path: 'users',
+      name:'Users',
+      component: Users,
+    },
+    {
+      path: 'status',
+      name:'Status',
+      component: Status,
+    },
+    {
+      path: 'logs',
+      name:'Logs',
+      component: Table,
+    },
+
+  ]
+})
+
+new Vue({
+  el: '#app',
+  render: h => h(App),
+  router
+})
+
+
+
+//users.vue
+<template>
+
+    <div id="table">
+<div>
+  <b-form @submit.stop.prevent="handleSubmit" inline class = "form_user">
+   
+    <b-button squared size="sm" style="margin-left:1px" variant="success" v-b-modal.modal-prevent-closing @click="addUsers">Add</b-button>
+	
+	<b-button squared size="sm" style="margin-left:1px" variant="primary" @click="editUsers">Edit</b-button>
+	<b-button squared size="sm" style="margin-left:1px" variant="danger" @click="deleteUsers">Del</b-button>
+	<b-button squared size="sm" style="margin-left:1px" variant="secondary">Назначить профиль</b-button>
+	<b-button squared size="sm" style="margin-left:1px" variant="secondary">Назначить аппарат</b-button>
+	<b-button squared size="sm" style="margin-left:1px" variant="secondary">Освободить аппарат</b-button>
+	<b-button squared size="sm" style="margin-left:1px" variant="secondary">Назначить модель</b-button>
+	<b-button squared size="sm" style="margin-left:1px" variant="secondary" @click="refresh_table">Обновить</b-button>
+	<div class = "alertcontainer">
+		<b-alert
+			:show="alertoprions.dismissCountDown"
+			variant="success"
+			@dismissed="alertoprions.dismissCountDown=0"
+			@dismiss-count-down="countDownChanged"
+			class="alert"
+		>
+			<p>{{alertoprions.message}}</p>
+		</b-alert>
+	<div>
+	
+	<b-modal centered scrollable  :title="formstate.type" @show="resetModal" @hidden="resetModal" @ok="handleOk" id="modal-prevent-closing">
+	
+	<b-form-group
+        label-for="number-input"
+        invalid-feedback="Номер абонента должен быть заполнен и состоять из цифр, не должен совпадать с уже имеющимися в системе номерами и должен соответствовать выбранному плану нумерации и правилам нумерации выбранной группы."
+        :state="formstate.state.number"
+    >
+	<b-form-input id="number-input" v-model="formstate.formdata.number" class = "inputline" :type="number" min="0" max="99999" placeholder="Номер"  :state="formstate.state.number" :disabled="formstate.enabled.number"></b-form-input>
+	</b-form-group>
+	
+	<b-form-group
+        label-for="fullname-input"
+        invalid-feedback="Имя абонента не может быть пустым"
+        :state="formstate.state.fullname"
+    >
+	<b-form-input id="fullname-input" v-model="formstate.formdata.fullname" class = "inputline" placeholder="Имя" :state="formstate.state.fullname"></b-form-input>
+	</b-form-group>
+	
+	<b-form-group
+        label-for="password-input"
+        invalid-feedback="Пароль абонента не может быть пустым"
+        :state="formstate.state.password"
+    >
+	<b-form-input id="password-input" v-model="formstate.formdata.password" class = "inputline" placeholder="Пароль"  :state="formstate.state.password"></b-form-input>
+	</b-form-group>
+	
+	<b-form-group
+        label-for="group-input"
+        invalid-feedback="Необходимо выбрать группу"
+        :state="formstate.state.group"
+    >
+	<b-form-select id="group-input" v-model="formstate.formdata.group" class = "inputline"  :options="params.group_data"  :state="formstate.state.group"></b-form-select>
+	</b-form-group>
+	
+	
+	<b-form-group
+        label-for="group-profile"
+        invalid-feedback="Необходимо выбрать профиль исходящих звонков"
+        :state="formstate.state.profile"
+    >
+	<b-form-select id="group-profile" v-model="formstate.formdata.profile" class = "inputline"  :options="params.profile_data"  :state="formstate.state.profile"></b-form-select>
+	</b-form-group>
+	
+	
+	<b-form-group
+        label-for="group-email"
+        invalid-feedback="Пожалуйста введите корректный почтовый адрес"
+        :state="formstate.state.email"
+    >
+	<b-form-input id="group-email" v-model="formstate.formdata.email" class = "inputline" :type="email" placeholder="E-mail"  :state="formstate.state.email"></b-form-input>
+	</b-form-group>
+	
+	
+	
+	<b-form-group
+        label-for="group-pin"
+        invalid-feedback="Пин код абонента не может быть пустым и должен быть 5-значным числом"
+        :state="formstate.state.pin"
+    >
+	<b-form-input id="group-pin" v-model="formstate.formdata.pin" class = "inputline" placeholder="pin"  :state="formstate.state.pin"></b-form-input>
+	</b-form-group>
+
+	<b-form-group
+        label-for="group-mobile"
+        invalid-feedback="Мобильный номер может быть либо пустым, либо целым числом"
+        :state="formstate.state.mobile"
+    >
+	<b-form-input id="group-mobile" v-model="formstate.formdata.mobile" class = "inputline" placeholder="Мобильный (необязательно)" :state="formstate.state.mobile"></b-form-input>
+	</b-form-group>
+	
+	
+	
+	<b-form-group
+        label-for="group-mac"
+        invalid-feedback="Мак адрес может быть либо пустым, либо мак адресом в формате без двоеточия и тире, он не должен совпадать с уже имеющимися в системе адресами"
+        :state="formstate.state.mac"
+    >
+	<b-form-input id="group-mac" v-model="formstate.formdata.mac" class = "inputline" placeholder="Maк адрес (необязательно)" :state="formstate.state.mac"></b-form-input>
+	</b-form-group>
+	
+	
+	<b-form-group
+        label-for="group-model"
+        invalid-feedback="Модель телефона нужно указывать только если правильно введен мак адрес"
+        :state="formstate.state.model"
+    >
+	<b-form-select id="group-model" v-model="formstate.formdata.model" class = "inputline"  :options="params.model_data" required :state="formstate.state.model"></b-form-select>
+	</b-form-group>
+	<!--
+	<b-card class="mt-3" header="Form Data Result">
+      <pre class="m-0">{{ formstate }}</pre>
+    </b-card>
+	-->
+	
+	</b-modal>
+	
+  </b-form>
+</div>
+        <div class="innertable">
+            <vue-table-dynamic :params="params" ref="table" @select="onSelect" @selection-change="onSelectionChange">
+              
+            </vue-table-dynamic>
+        </div>
+
+    </div>
+
+</template>
+
+<script>
+    import VueTableDynamic from 'vue-table-dynamic'
+    import axios from "axios";
+	
+    export default {
+        name: "Table",
+        data() {
+            return {
+				alertoprions:{
+					message: null,
+					dismissSecs: 3,
+					dismissCountDown: 0,
+					showDismissibleAlert: true,
+				},
+                params: {
+                    data: [],
+					group_data: null,
+					profile_data: null,
+					model_data: null,
+                    header: 'row',
+                    border: false,
+                    stripe: true,
+                    showCheck: true,
+                    enableSearch: true,
+                    sort: [0,1,2,3,4,5,6,8,9,10,11,12],
+                    pagination: true,
+                    pageSize: 20,
+                    pageSizes: [20, 50, 100],
+                },
+				formstate: {
+					type: null,
+					enabled:{
+						group: null,
+						profile: null,
+						model: null,
+						email: null,
+						pin: null,
+						mobile: null,
+						mac: null,
+						password: null,
+						fullname: null,
+						number: null,
+					},
+					state:{
+						group: null,
+						profile: null,
+						model: null,
+						email: null,
+						pin: null,
+						mobile: null,
+						mac: null,
+						password: null,
+						fullname: null,
+						number: null,
+					},
+					formdata:{
+						group: null,
+						profile: null,
+						model: null,
+						email: null,
+						pin: null,
+						mobile: null,
+						mac: null,
+						password: null,
+						fullname: null,
+						number: null
+					},
+				},
+            };
+        },
+        created() {
+				this.refresh_users()
+				this.refresh_groups()
+				this.refresh_profiles()
+				this.refresh_models()
+        },
+        methods: {
+			refresh_profiles: async function(){
+				await this.standart_load("profiles","")
+			},
+			refresh_users: async function(){
+				await this.standart_load("users","")
+			},
+			refresh_groups: async function(){
+				await this.standart_load("groups","")
+			},
+			refresh_models: async function(){
+				await this.standart_load("models","")
+			},
+			refresh_table: async function(){
+				await this.refresh_users();
+				this.showAlert("Таблица обновлена")
+			},
+			standart_load: async function(variant, post){
+				const urldata = {
+					users: [ "/users_controller.php?get_users", "data", post],
+					groups: [ "/users_controller.php?get_groups", "group_data", post],
+					profiles: [ "/users_controller.php?get_profiles", "profile_data", post],
+					models: [ "/users_controller.php?get_models", "model_data", post],
+					validate_add: ["/users_controller.php?validate_add", "", post],
+					delete_users: ["/users_controller.php?delete_users", "", post],
+					edit_users: ["/users_controller.php?edit_users", "", post],
+					save_users: ["/users_controller.php?save_users", "", post]
+				}
+				
+				if (post != "") {
+					//console.log(JSON.stringify(urldata[variant][2]));
+				const tmp = await axios.post(urldata[variant][0],JSON.stringify(urldata[variant][2]))
+					//console.log( JSON.parse(JSON.stringify(tmp.data)))
+					return JSON.parse(JSON.stringify(tmp.data))
+				}else {
+					const tmp = await axios.post(urldata[variant][0])
+					this.params.[urldata[variant][1]] = JSON.parse(JSON.stringify(tmp.data))
+				}
+				
+			},
+			checkValidity_custom: async function(){
+				
+				let test =""
+				if (this.formstate.type == "Добавить пользователя")
+				{
+					test = "validate_add"
+				} 
+				if (this.formstate.type == "Редактировать пользователя")
+				{
+					test = "save_users"
+				}
+				console.log(test)
+				let result = await this.standart_load(test,this.formstate)
+				this.formstate.state=result
+
+				let testVar = true
+				for (let value of Object.values(result)) {
+					if (value == false){
+						testVar = false
+						break
+					}
+				}
+
+				if (testVar == false) {
+					return false
+				}else {
+					return true
+				}	
+			},
+			async checkFormValidity() {
+				const valid = await this.checkValidity_custom()
+				return valid
+			},
+			async resetModal() {
+				this.formstate.state = {
+						group: null,
+						profile: null,
+						model: null,
+						email: null,
+						pin: null,
+						mobile: null,
+						mac: null,
+						password: null,
+						fullname: null,
+						number: null,
+				}
+					
+				this.formstate.formdata = {
+						group: null,
+						profile: null,
+						model: null,
+						email: null,
+						pin: null,
+						mobile: null,
+						mac: null,
+						password: null,
+						fullname: null,
+						number: null,
+				}	
+				
+			},
+			async handleOk(bvModalEvt) {
+				// Prevent modal from closing
+				bvModalEvt.preventDefault()
+				// Trigger submit handler
+				await this.handleSubmit()
+			},
+			async handleSubmit() {
+			
+			// Exit when the form isn't valid
+			let result_i = await this.checkFormValidity()
+			if (!result_i) {
+				return
+			}
+			// Push the name to submitted names
+			//this.submittedNames.push(this.name)
+			// Hide the modal manually
+			this.$nextTick(() => {
+				this.$bvModal.hide('modal-prevent-closing')
+				this.refresh_users()
+				this.showAlert("Действие выполнено")
+			})
+			},
+            //onSelect(isChecked, index, data) {
+				//console.log('onSelect: ', isChecked, index, data)
+                //console.log('Checked Data:', this.$refs.table.getCheckedRowDatas(true))
+            //},
+            // onSelectionChange(checkedDatas, checkedIndexs, checkedNum) {
+               // console.log('onSelectionChange: ', checkedDatas, checkedIndexs, checkedNum)
+            // },
+			countDownChanged(dismissCountDown) {
+				this.alertoprions.dismissCountDown = dismissCountDown
+			},
+			showAlert(message) {
+				this.alertoprions.message = message
+				this.alertoprions.dismissCountDown = this.alertoprions.dismissSecs
+			},
+			async deleteUsers(){
+				
+				let number = this.$refs.table.getCheckedRowDatas(true)
+				//console.log('Checked Data:', number.slice(1))
+				let result = await this.standart_load("delete_users",{"formdata" : number.slice(1)})
+				
+				if (result.error){
+					this.showAlert(result.error)
+				}else{
+					this.refresh_users()
+					this.showAlert("Действие выполнено")
+				}
+					
+				//console.log(result)
+			},
+			async addUsers(){
+				this.formstate.type = "Добавить пользователя"
+			},
+			async editUsers(){
+				let number = this.$refs.table.getCheckedRowDatas(true)
+
+				if (Object.keys(number.slice(1)).length==1){
+					console.log('Checked Data:', number.slice(1))
+					this.formstate.type = "Редактировать пользователя"
+					let result = await this.standart_load("edit_users",{"formdata" : number.slice(1)})
+					
+					if (result.error){
+						this.showAlert(result.error)
+					}
+					else{
+						this.$bvModal.show('modal-prevent-closing')
+						this.formstate.formdata = result
+						console.log(result)
+						
+					}
+					
+				}else {
+					this.showAlert("Нужно выбрать одного пользователя")
+				}
+				
+				
+				
+				
+				
+			},
+			
+			
+			
+			//,handleSubmit(event) {
+				// console.log(event)
+				// alert(JSON.stringify(this.form))
+			// }
+			
+        },
+        components: {
+            VueTableDynamic,
+        },
+		
+    };
+</script>
+
+<style>
+    .innertable {
+        width: 98%;
+        margin-left: 1%;
+    }
+	.inputline {
+		margin-bottom:5px;
+		}
+	.alert {
+		height: 31px;
+		line-height:31px;
+		padding:0px 15px;
+		}
+	.alertcontainer{
+		position: absolute;
+		right:50px;
+		height:31px;
+		width:300px;
+		text-align: center;
+	}
+	.form_user{
+		margin-left:19px;
+		padding-top:13px;	
+	}
+	.vue-scrollbar-horizontal{
+		z-index:999 !important;
+	}
+</style>
+
+
+
+//app.vue
+<template>
+    <div id="app">
+        <div id="all">
+            <div id="logo">
+                <div id="time">2021 04 24 16:12:10</div>
+                <span id="logo-icon"></span>
+                <span id="logo-2"></span>
+            </div>
+            <div id="navigate" >
+                <div id="innernav">
+                    <div id="mainmenu">
+                        <div id="menu">
+                            <b-dropdown  size="" variant="bg-transparent text-white light" v-for="menuItem in mainMenuItems" :key="menuItem.title">
+                                <template #button-content>
+                                    {{ menuItem.title }}
+                                </template>
+
+                                <div v-if="menuItem.childItems">
+
+                                    <b-dropdown-item  v-for="menuItem_childItems in menuItem.childItems"
+                                                     :key="menuItem_childItems.routerName">
+
+                                            <router-link style="text-decoration: none; color: inherit;" :to="{name: menuItem_childItems.routerName}">
+
+                                                {{ menuItem_childItems.title }}
+
+                                            </router-link>
+
+                                    </b-dropdown-item>
+
+                                </div>
+                            </b-dropdown>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="bottomline"></div>
+            <div id="content">
+                <router-view></router-view>
+            </div>
+
+        </div>
+    </div>
+</template>
+
+<script>
+    export default {
+        data() {
+            return {
+                isGranted: 0 ,
+                mainMenuItems: [
+                    {
+                        title: "Отчеты",
+                        routerName: "",
+                        childItems: [
+                            {
+                                title: "Статус",
+                                routerName: "Status"
+                            },
+                            {
+                                title: "Звонки",
+                                routerName: "calls"
+                            },
+                            {
+                                title: "Графики",
+                                routerName: "graph"
+                            },
+                            {
+                                title: "Логи",
+                                routerName: "Logs"
+                            }
+                        ]
+                    },
+                    {
+                        title: "Настройка",
+                        routerName: "",
+                        childItems: [
+                            {
+                                title: "Пользователи",
+                                routerName: "Users"
+                            },
+                            {
+                                title: "Группы",
+                                routerName: "groups"
+                            },
+                            {
+                                title: "AD/LDAP",
+                                routerName: "import"
+                            },
+                            {
+                                title: "Нумерация",
+                                routerName: "numsettings"
+                            },
+                            {
+                                title: "Расписание",
+                                routerName: "calendar"
+                            },
+                            {
+                                title: "Транки",
+                                routerName: "trunks"
+                            },
+                            {
+                                title: "Почта",
+                                routerName: "mail"
+                            },
+                            {
+                                title: "Конфигурация",
+                                routerName: "config"
+                            }
+
+                        ]
+                    },
+                    {
+                        title: "Автонастройка",
+                        routerName: "",
+                        childItems: [
+                            {
+                                title: "Файлы",
+                                routerName: "auto"
+                            },
+                        ]
+                    },
+                    {
+                        title: "Обслуживание",
+                        routerName: "",
+                        childItems: [
+                            {
+                                title: "Банлист",
+                                routerName: "banlist"
+                            },
+                            {
+                                title: "Черный список",
+                                routerName: "blacklist"
+                            },
+                            {
+                                title: "Перезагрузка",
+                                routerName: "reload"
+                            },
+                            {
+                                title: "Учетные записи",
+                                routerName: "accounts"
+                            }
+
+                        ]
+                    },
+                    {
+                        title: "Выход",
+                        routerName: "exit"
+                    }
+
+                ]
+            }
+        }
+    }
+</script>
+
+<style lang="css">
+    #mainmenu {
+        background-color: #999B9F;
+        background-image: url(./assets/menu-overlay.png);
+        border-top: 1px solid #BABBBD;
+        border-bottom: 1px solid #0E1319;
+        height: 52px;
+    }
+
+    #all {
+        float: left;
+        width: 100%;
+
+        min-height: 100%;
+        height: auto !important;
+    }
+
+    #time {
+        height: 43px;
+        background: none;
+        float: right;
+        border-top: none;
+        border-bottom: none;
+        color: #fff;
+        width: 120px;
+        font-size: 16px;
+        padding-top: 10px;
+    }
+
+    #logo-icon {
+        width: 119px;
+        height: 119px;
+        position: absolute;
+        left: 220px;
+        top: 3px;
+        z-index: 2;
+        background-repeat: no-repeat;
+        background-image: url(./assets/logo-icon.png);
+    }
+
+    #logo-2 {
+        width: 233px;
+        margin-top: 13px;
+        height: 46px;
+        position: absolute;
+        margin-left: 355px;
+        display: block;
+        background-repeat: no-repeat;
+        background-image: url(./assets/logo.png);
+    }
+
+    #navigate {
+        background-color: #999B9F;
+        background-image: url(./assets/menu-overlay.png);
+        border-top: 1px solid #BABBBD;
+        border-bottom: 1px solid #0E1319;
+        height: 52px;
+    }
+
+    #innernav {
+        background-repeat: no-repeat;
+        background-position: 0 -4px;
+        background-image: url(./assets/menu-flare.png);
+    }
+
+    body {
+        height: 100%;
+        width: 100%;
+        background: #f9f9f9 url(./assets/wood.png);
+        margin: 0px;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 14px;
+    }
+
+    #menu {
+        margin-top: 5px;
+        float: left;
+        height: 38px;
+        white-space: nowrap;
+        margin-left: 357px;
+        border-radius: 3px;
+        box-shadow: 1px 1px 5px #000;
+    }
+
+    #bottomline {
+        width: 100%;
+        float: left;
+        height: 3px;
+        background-position: left 12px;
+        background: #f9f9f9 url(./assets/horSep.png) left bottom repeat-x;
+    }
+
+
+    .menuitem {
+        margin-left: 32px;
+        float: left;
+        margin-top: 9px;
+        color: #f9f9f9;
+    }
+
+
+    #logo {
+        background: #97C227 url(./assets/top-overlay.png) repeat-x left top;
+        color: #fff;
+        height: 71px;
+        width: auto;
+    }
+
+    #app {
+
+
+    }
+
+    #content {
+        min-height: 510px;
+        background-color: #f9f9f9;
+        margin-top: 25px;
+        border-radius: 3px;
+        box-shadow: 0 0 4px rgb(0 0 0 / 80%);
+        width: 96%;
+        margin-left: 2%;
+        margin-right: 2%;
+
+    }
+
+
+</style>
+
