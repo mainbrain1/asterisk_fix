@@ -1,0 +1,16 @@
+local record = function(to)
+    local monopt
+    name = channel.CALLERID("number"):get()
+    id = channel.CHANNEL("uniqueid"):get()
+    date = os.date("%Y-%m-%d----%X")
+    date = string.gsub(date, ":", "-");
+    local fname = "[" .. id .. "]" .. "-[" .. date .. "]-[" .. name .. "----" .. to .. "]"
+    logger("START RECORDING    FROMCONF=", fromconf)
+    dir = "/var/calls/"
+    monopt = string.format("/usr/bin/nice -n 19 /usr/bin/ionice -c3 /usr/bin/lame -b 64  --silent %s%s.wav %s%s.mp3 && rm -f %s%s.wav  >/tmp/record[%s].log 2>&1 &", dir, fname, dir, fname, dir, fname, fname)
+    if fromconf == 1 then
+        monopt = "";
+	end;
+    app.mixmonitor(string.format("%s%s.wav,,%s", dir, fname, monopt))
+    channel["CDR(recordname)"]:set(fname .. ".mp3")
+end;
