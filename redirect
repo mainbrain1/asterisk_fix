@@ -1,0 +1,83 @@
+local cfwd_set = function(context, extension)
+	
+	--app.set("CHANNEL(language)=ru");
+	local num = channel.CALLERID("number"):get()
+	logger("CFWD FROM NUMBER",num)
+	
+	require('config.lua')
+	local driver = require "luasql.mysql"
+	local env = assert(driver.mysql())
+	local con = assert(env:connect(my_dbname, my_dbuser, my_dbpass, my_dbhost, my_dbport));
+	local sql_num = string.format("SELECT * from sip_buddies_additional where number=%s", num)
+	local cur_num = assert(con:execute(sql_num));
+	local row_num = cur_num:fetch({}, "a")
+	
+	local extension_to
+	if string.sub(extension, 1,8) == "cfwdall-" then 
+		logger("CFWD CISCO SET DETECTED", extension)
+		extension_to = string.sub(extension, 9)
+		logger("CFWD CISCO EXT_CLEAR", extension)
+		common_marked = false
+		else
+		extension_to = extension 
+		logger("CFWD COMMON SET DETECTED", extension)
+		common_marked = true
+	end
+	
+	if (row_num) then
+		logger("CFWD     ", row_num.cfwd_enable)
+		
+		if row_num.cfwd_enable == "0" then
+			
+			if common_marked then
+				local ext_empty = ""
+				local counter = 0
+				while (ext_empty == nil or string.len(ext_empty) < 4 or ext_empty < 1000) and counter < 3 do
+					app.read("NUM_CHOOSE", "record/getnum", 11, nil, 1, 3);
+					extension_to = channel["NUM_CHOOSE"]:get();
+					ext_empty = tonumber(extension_to)
+					counter = counter +1
+				end
+			end
+			if extension_to ~= "" then
+				app.read("NUM_CHOOSE", "record/cfwd_set2", 3, nil, 1, 3);
+				local time_sec = channel["NUM_CHOOSE"]:get();
+				if time_sec == "" then
+					time_sec = 0
+					else
+					app.playback("record/timeset")
+				end
+				local res = assert(con:execute(string.format([[UPDATE sip_buddies_additional SET mobile = '%s', cfwd_enable = '%s', time = '%s' WHERE number = '%s']], extension_to, 1, time_sec, num)));
+			end
+			else
+			local res = assert(con:execute(string.format([[UPDATE sip_buddies_additional SET cfwd_enable = '%s' WHERE number = '%s']], 0, num)));
+			app.playback("record/cfwd_del")
+		end
+		else
+		if common_marked then
+			local ext_empty = ""
+			local counter = 0
+			while (ext_empty == nil or string.len(ext_empty) < 4 or ext_empty < 1000) and counter < 3 do
+				app.read("NUM_CHOOSE", "record/getnum", 11, nil, 1, 3);
+				extension_to = channel["NUM_CHOOSE"]:get();
+				ext_empty = tonumber(extension_to)
+				counter = counter +1
+			end
+		end
+		if extension_to ~= "" then
+			app.read("NUM_CHOOSE", "record/cfwd_set2", 3, nil, 1, 3);
+			local time_sec = channel["NUM_CHOOSE"]:get();
+			if time_sec == "" then
+				time_sec = 0
+				else
+				app.playback("record/timeset")
+			end
+			local res = assert(con:execute(string.format([[INSERT INTO sip_buddies_additional VALUES ('%s', '%s', '%s', '%s', '%s')]], 0, num, extension_to, time_sec, 1)));
+		end
+	end
+	
+	cur_num:close()
+	con:close()
+	env:close()
+	
+end
