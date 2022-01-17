@@ -1,0 +1,72 @@
+FTP="$(which ftp)"
+WPUT="$(which wput)"
+LXC="/snap/bin/lxc"
+FTPPASS="43643434345"
+FTPUSER="backup_unix"
+FTP_PATH="BackupUnix/lxd/asterisk/"
+MAILBOX="admin@blabla.ru"
+MAILHEAD="Asterisk [test] Backup is Completed"
+SERVERIP="10.57.2.24"
+DIR="/backup_tmp/lxd_dump"
+SOURCE="ast-new"
+FILE=$SOURCE"-backup-image.tar.gz"
+HOST_CFG=$SOURCE"-backup-host-cfg.tar.gz"
+HOST_CFG_DIR="/etc /backup_tmp"
+PRIO="/usr/bin/nice -n 19 /usr/bin/ionice -c3"
+LOG="/backup_tmp/log/"$SOURCE"-lxd_dump.log"
+LOG2="/backup_tmp/log/"$SOURCE"-lxd_dump.log2"
+rm -f $LOG
+rm -f $LOG2
+touch $LOG
+touch $LOG2
+mv $DIR/$FILE $DIR/old_$FILE
+mv $DIR/$HOST_CFG $DIR/old_$HOST_CFG
+
+
+#--exclude=/backup_tmp/config_dump
+$PRIO tar cpzf $DIR/$HOST_CFG --exclude=/backup_tmp/lxd_dump $HOST_CFG_DIR
+
+# NEW METHOD
+$PRIO $LXC snapshot $SOURCE $SOURCE-backup  >> $LOG
+$PRIO $LXC publish $SOURCE/$SOURCE-backup --alias $SOURCE-backup-image >> $LOG
+$PRIO $LXC image export $SOURCE-backup-image $DIR/$SOURCE-backup-image >> $LOG
+$PRIO $LXC image delete $SOURCE-backup-image >> $LOG
+$PRIO $LXC delete $SOURCE/$SOURCE-backup >> $LOG
+
+
+echo "-------------------------------Files "$SOURCE"-lxd_dump on FTP---------------------------------------" >> $LOG
+
+cd $DIR
+$FTP -n $SERVERIP <<END_SCRIPT
+quote USER $FTPUSER
+quote PASS $FTPPASS
+prompt off
+binary
+quote PASV
+cd $FTP_PATH
+rename $FILE old_$FILE
+rename $HOST_CFG old_$HOST_CFG
+quit
+END_SCRIPT
+
+cd $DIR
+$PRIO $WPUT -v -B -t -1 -o /backup_tmp/log/$SOURCE-wput_lxd.log $FILE ftp://$FTPUSER:$FTPPASS@$SERVERIP/$FTP_PATH$FILE
+$PRIO $WPUT -v -B -t -1 -o /backup_tmp/log/$SOURCE-wput_host_cfg.log $HOST_CFG ftp://$FTPUSER:$FTPPASS@$SERVERIP/$FTP_PATH$HOST_CFG
+#-l 8M 
+
+$FTP -n $SERVERIP <<END_SCRIPT
+quote USER $FTPUSER
+quote PASS $FTPPASS
+prompt off
+binary
+quote PASV
+cd $FTP_PATH
+ls $FTP_PATH $LOG2
+quit
+END_SCRIPT
+
+echo "-------------------------------File "$SOURCE"-lxd_dump on server-----------------------------------" >> $LOG2
+ls -l $DIR/$FILE >> $LOG2
+
+cat $LOG2 | grep $SOURCE >> $LOG
+cat $LOG | mail -s "$MAILHEAD" $MAILBOX
