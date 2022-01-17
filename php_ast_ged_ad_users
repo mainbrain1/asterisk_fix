@@ -1,0 +1,141 @@
+	
+  function connect_ad(){
+			$connect = $this->connectBase();
+			
+			$query_ad = "SELECT * FROM `ldap_settings` where `default_setting` = 1";
+			$result_ad = mysqli_query($connect,$query_ad);
+			$params = mysqli_fetch_array($result_ad);
+			
+			$ldap_user   = 	$params["user"];
+			$ldap_pass   = 	$params["pass"];
+			$domain_name = 	$params["domain"];
+			$ignore_list =  explode(" ",$params["ignorelist"]); // Служебные пользователи, которых не надо показывать
+			$ignore_list_arr = Array();
+			foreach ($ignore_list as $key=>$value){
+				$ignore_list_arr[$value]= 1;
+			}
+			
+			$base_dn = $params["basedn"];
+			
+			// Connect to LDAP server
+			$ldap_con = ldap_connect($domain_name)
+			or die("Could not connect to LDAP server.");
+			
+			// Fix for Windows 2003 AD
+			ldap_set_option($ldap_con, LDAP_OPT_PROTOCOL_VERSION, 3);
+			ldap_set_option($ldap_con, LDAP_OPT_REFERRALS, 0);
+			
+			// binding to LDAP server
+			
+			$ldapbind = ldap_bind($ldap_con, $ldap_user, $ldap_pass)
+			or die("LDAP bind failed...");
+			return ["ldap_con" => $ldap_con, "base_dn" => $base_dn];
+		}
+		
+  
+  
+  function get_AD_users(){
+			//var_dump($params);die;
+			$con = $this->connect_ad(); //->ldap_con
+			$ldap_con = $con["ldap_con"];
+			$base_dn = $con["base_dn"];
+			// OU=Test_users, OU=shm5, OU=SPB, OU=GS, DC=gs,  DC=corp, DC=int
+			$filter = "(&(objectClass=user)(objectCategory=person)(memberOf=cn=spb_asterisk_users, ou=Groups, OU=shm5, OU=SPB, OU=GS, DC=gs,  DC=corp, DC=int)(|(name=*)(displayname=*)(cn=*)))";
+			$search=ldap_search($ldap_con, $base_dn, $filter);
+			
+			$number_returned = ldap_count_entries($ldap_con,$search); // Количество пользователей
+			$info = ldap_get_entries($ldap_con, $search);
+			//var_dump($info );die;
+			// Результирующий массив с пользователями из AD
+			$users = array();
+			
+			for ($i=0; $i<$info["count"]; $i++) {
+				$user = array();
+				// $user["login"] = utf2win($info[$i]["samaccountname"][0]);
+				// $user["fio"] = utf2win($info[$i]["name"][0]);
+				
+				$user["ldap_username"] = $info[$i]["samaccountname"][0];
+				
+				if (isset ($info[$i]["name"][0])){
+					$user["fullname"] = $info[$i]["name"][0];
+					}else{
+					$user["fullname"] = "";
+				}
+				
+				if (isset ($info[$i]["telephonenumber"][0])){
+					$user["number"] = $info[$i]["telephonenumber"][0];
+					}else{
+					$user["number"] = "";
+				}
+				if (isset ($info[$i]["wwwhomepage"][0])){
+					
+					$user_cfg=$info[$i]["wwwhomepage"][0];
+					
+					$user_cfg = json_decode($user_cfg);
+					if ($user_cfg){
+						
+						if ($user_cfg->mac){
+							$user["mac"] = $user_cfg->mac;
+							}else{
+							$user["mac"] ="";
+						}
+						if (isset($user_cfg->group)){
+							$user["group"] = $user_cfg->group;
+							}else{
+							$user["group"] ="";
+						}
+						if (isset($user_cfg->model)){
+							$user["model"] = $user_cfg->model;
+							}else{
+							$user["model"] ="";
+						}
+						if (isset($user_cfg->profile)){
+							$user["profile"] = $user_cfg->profile;
+							}else{
+							$user["profile"] ="";
+						}
+						}else {
+						$user["mac"] ="";
+						$user["group"] ="";
+						$user["model"] ="";
+						$user["profile"] ="";
+					}
+					
+					}else{
+					$user["mac"] ="";
+					$user["group"] ="";
+					$user["model"] ="";
+				}
+				
+				if (isset ($info[$i]["mail"][0])){
+					$user["email"] = $info[$i]["mail"][0];
+					}else{
+					$user["email"] = "";
+				}
+				
+				if (isset ($info[$i]["mobile"][0])){
+					$user["mobile"] = $this->fix_mobile($info[$i]["mobile"][0]);
+					}else{
+					$user["mobile"] = "";
+				}
+				//$user["dn"]=$info[$i]["distinguishedname"][0];
+				//$user["status"] = $info[$i]["useraccountcontrol"][0];  // 514
+				//$user["photo"] = $info[$i]["thumbnailphoto"][0];  
+				//$tmp = explode(" ",$user["fio"]);
+				//$user["last"]   = trim($tmp[0]);   // Фамилия
+				//$user["first"]  = @trim($tmp[1]);  // Имя
+				//$user["second"] = @trim($tmp[2]);  // Отчество
+				//file_put_contents("/var/www/html/config/phonebook/".$user["login"].".jpg", $user["photo"]);
+				if(!isset($ignore_list_arr[$user["ldap_username"]]) and $info[$i]["useraccountcontrol"][0]!=514){
+					$users[$user["ldap_username"]] = $user;
+					
+				};
+				
+				//die;
+				
+			}
+			ldap_close($ldap_con);
+			//var_dump($users);
+			return $users;
+		}
+		
