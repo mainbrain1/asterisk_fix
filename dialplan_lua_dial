@@ -1,0 +1,60 @@
+local dial = function(context, extension)
+	local value = channel["TIMEOUT(digit)"]:get()
+	logger("TIMEOUT     ",value)
+    dialoptions = "t"
+    local to = extension
+    local name = channel.CALLERID("number"):get()
+    logger("LOCAL DIAL START DETECTED    FROM_TO", name .. "_" .. to)
+	
+	require('config.lua')
+	local driver = require "luasql.mysql"
+	local env = assert(driver.mysql())
+	local con = assert(env:connect(my_dbname, my_dbuser, my_dbpass, my_dbhost, my_dbport));
+	local sql_name = string.format("SELECT * from sip_buddies_additional where number=%s", to)
+	logger("ROW CFWD    ", extension)
+	local cur_name = assert(con:execute(sql_name));
+	local row_name = cur_name:fetch({}, "a")
+	cur_name:close()
+	con:close()
+	env:close()
+	
+	
+	if  row_name and row_name.cfwd_enable == "1" then
+		recordname = record(to)
+		logger("REDIRECT WAITING DETECTED    FROM_TO_NUM", name .. "_" .. to .. "_" .. row_name.mobile)
+		app.set("CHANNEL(language)=ru");
+		
+		if tonumber(row_name.time) > 0 then
+			app.dial('SIP/' .. extension, row_name.time, dialoptions);	--15
+			local dialstatus = channel["DIALSTATUS"]:get();
+			
+			if dialstatus == 'BUSY' or dialstatus == 'CHANUNAVAIL' or dialstatus == 'NOANSWER' then
+				logger("LOCAL DIALSTATUS DETECTED    ", dialstatus)
+				logger("REDIRECT ENABLE WITH TIME DETECTED    FROM_TO_NUM", name .. "_" .. to .. "_" .. row_name.mobile)
+				logger("context extension", context .. "_" .. extension )
+				fromredirect = to
+				app.Goto("redirect_allow",row_name.mobile,1)
+			end;
+			
+			else
+			logger("LOCAL DIALSTATUS DETECTED    ", dialstatus)
+			logger("REDIRECT ENABLE DETECTED    FROM_TO_NUM", name .. "_" .. to .. "_" .. row_name.mobile)
+			logger("context extension", context .. "_" .. extension )
+			fromredirect = to
+			app.Goto("redirect_allow",row_name.mobile,1)
+		end
+		
+		
+		else 
+		recordname = record(to)
+		app.dial('SIP/' .. extension, 60, dialoptions);
+		local dialstatus = channel["DIALSTATUS"]:get();
+		app.set("CHANNEL(language)=ru");
+		if dialstatus == 'BUSY' or dialstatus == 'CHANUNAVAIL' or dialstatus == 'NOANSWER' then
+			logger("LOCAL DIALSTATUS DETECTED    ", dialstatus)
+			app.voicemail(extension, "")
+		end;
+		app.hangup();
+	end;
+	
+end;
