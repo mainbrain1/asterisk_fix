@@ -1,0 +1,363 @@
+///////////////////////////////////// Init
+var fs = require('fs');
+var func = require('./functions');
+var cfg = require('./cfg');
+var http = require('http');
+var express = require('express');
+var server = http.createServer();
+var socket = require('socket.io').listen(server);
+server.listen(cfg.settings.server_port);
+var chalk = require('chalk');
+var clients = {};
+var registered = {};
+var hashes = {};
+var callstatus = {
+	'ANSWER': 'Отвеченный',
+	'NOANSWER': 'Неотвеченный',
+	'BUSY': 'Занято',
+	'FAILED': 'Неудавшийся',
+	'CANCEL': 'Отменен'
+};
+
+
+///////////////////////////////////// Mysql
+var mysql = require('mysql');
+var connection = mysql.createConnection(cfg.db);
+connection.connect();
+console.log(func.endTime() + "  CONNECTED TO DATABASE");
+//connection.query("SET SESSION wait_timeout = 604800");
+setInterval(sqlrefresh, cfg.settings.sql_refreshtime);
+function sqlrefresh() {
+	connection.query('SELECT 1 FROM   `crm_calls`');
+	console.log(func.endTime() + '  SQL CONNECTION REFRESHED');
+}
+///////////////////////////////////// AST Ami Connect
+var ami = new require('asterisk-manager')(cfg.ast.port, cfg.ast.host, cfg.ast.user, cfg.ast.password, true);
+ami.keepConnected();
+console.log(func.endTime() + "  CONNECTED TO ASTERISK");
+///////////////////////////////////// AST Init
+connection.query('SELECT `name` FROM `sip_buddies`', function (err, rows, fields) {
+	if (err)
+	throw err;
+	for (var key in rows) {
+		var val = rows[key].name;
+		ami.action({
+			'action': 'ExtensionState',
+			'context': 'default',
+			'exten': val,
+			'actionid': '13242342'
+		}, function (err, res) {});
+	}
+	console.log(func.endTime() + "  USERS STATUS REFRESHED");
+});
+///////////////////////////////////// AST Dial
+ami.on('dialbegin', function (evt) {
+	
+	func.var_dump(evt)
+	var to = evt.dialstring;
+	var id = evt.uniqueid;
+	var from = evt.calleridnum;
+	var re = 'SIP_trunk_';
+	var t = to.search(re);
+	var date = func.endTime();
+	if (t != -1) {
+		to = to.substr(17);
+		from = evt.channel;
+		from = from.substr(4, 4);
+	}
+	console.log(func.endTime() + "  TEST  " + to + "  " + id + "  " + from + "  " + t);
+	console.log(func.endTime() + "  CALL BEGIN  " + from + "  " + to);
+	var post = {
+		uniqueid: id,
+		from: from,
+		to: to,
+		date: date
+	};
+	try {
+		var query = connection.query('INSERT INTO crm_calls SET ?', post, function (err, result) {
+			console.log(func.endTime() + "  INSERTID    " + result);
+			var data ={
+				from: from,
+				to: to,
+				date: date,
+				datestop: '',
+				status: '',
+				description: '',
+				uniqueid: id,
+				//id: result.insertId
+			}
+			
+			var message = JSON.stringify({
+				type: 'callbegin',
+				data: data
+			})
+			func.sendall('ast', message, registered, clients);
+			
+		});
+		} catch (err) {
+		console.log(func.endTime() + '  ERROR ' + err.name + ":  " + err.message + "  " + err.stack);
+	}
+});
+
+///////////////////////////////////// AST Dial End
+ami.on('dialend', function (evt) {
+	console.log(func.endTime() + chalk.green("  EVT " +func.var_dump(evt)));
+	// var call_status = evt.dialstatus;
+	// var id = evt.uniqueid;
+	// var from = evt.channel;
+	// var to = evt.destcalleridnum;
+	// from = from.substr(4, 4);
+	// var post = {
+		// status: callstatus[call_status]
+	// };
+	// var post2 = 'UPDATE crm_calls SET ? WHERE uniqueid=' + id ;//+' and ' + 'from=';
+	// var query = connection.query(post2, post, function (err, result) {
+		// console.log(func.endTime() + "  CALLING FROM  " + from + "  ENDED  ");
+		
+		// var message = JSON.stringify({
+			// type: 'callend',
+			// from: from,
+			// to: to
+		// })
+	// });
+});
+
+///////////////////////////////////// AST Hangup
+ami.on('hangup', function (evt) {
+	
+	console.log(func.endTime() + chalk.red("  EVT " +func.var_dump(evt)));
+	var from = evt.channel;
+	from = from.substr(4, 4);
+	var to = evt.connectedlinenum;
+	var re = 'SIP_trunk_';
+	var t = to.search(re);
+	var id = evt.uniqueid;
+	if (t != -1) {
+		to = to.substr(17);
+		from = evt.channel;
+		from = from.substr(4, 4);
+	}
+	
+	var datestop = func.endTime();
+	var post = {
+		datestop: datestop
+	};
+	var post2 = 'UPDATE crm_calls SET ? WHERE uniqueid=' + id;
+	var query = connection.query(post2, post, function (err, result) {
+		
+		var message = JSON.stringify({
+			type: 'hangup',
+			from: from,
+			to: to
+		})
+		console.log(func.endTime() + "  HANGUP FROM  " + from + " TO " + to + "  DETECTED" );
+		func.sendall('ast', message, registered, clients);
+		
+	});
+});
+
+///////////////////////////////////// AST Extensionstatus
+ami.on('extensionstatus', function (evt) {
+	var extension = evt.exten;
+	var status = evt.status;
+	var post = {
+		status: status
+	};
+	var post2 = 'UPDATE sip_buddies SET ? WHERE name=' + extension;
+	var query = connection.query(post2, post, function (err, result) {
+		
+		console.log(func.endTime() + "  NEW STATUS DETECTED ON " + extension + "  STATUS  " + status);
+		var message = JSON.stringify({
+			type: 'status',
+			extension: extension,
+			status: status
+		})
+		func.sendall('ast', message, registered, clients);
+	});
+});
+///////////////////////////////////// AST Response
+ami.on('response', function (evt) {
+	var res = evt.message;
+	var status = evt.status;
+	var extension = evt.exten;
+	
+	if (res == 'Extension Status') {
+		var post = {
+			status: status
+		};
+		var post2 = 'UPDATE sip_buddies SET ? WHERE name=' + extension;
+		var query = connection.query(post2, post, function (err, result) {
+			console.log(func.endTime() + "  MANUAL NEW STATUS DETECTED ON  " + extension + "  STATUS  " + status);
+			var message = JSON.stringify({
+				type: 'status',
+				extension: extension,
+				status: status
+			})
+			func.sendall('ast', message, registered, clients);
+		});
+	}
+});
+///////////////////////////////////// Socket.io
+socket.on('connection', function (ws) {
+	var id = func.str_rand();
+	clients[ws.id] = ws;
+	console.log(func.endTime() + chalk.yellow('  NEW USER CONNECTED WITH ID:  ') + ws.id)
+	console.log(func.endTime() + "  REGISTERED USERS  " + func.var_dump(registered));
+	///////////////////////////////////// Auth
+	ws.on('auth', function (message) {
+		if (message) {
+			console.log(func.endTime() + chalk.cyan('  AUTH REQUEST DETECTED:  ') + message)
+			try {
+				var incomingMessage = JSON.parse(message);
+				var password = incomingMessage.password
+				var login = incomingMessage.login
+				var regtype = incomingMessage.regtype
+				var sql = 'SELECT `vmsecret` FROM `sip_buddies` WHERE `name`=' + connection.escape(login.toString()); //connection.escape()
+				connection.query(sql, function (err, rows, fields) {
+					
+					if (err)
+					throw err;
+					
+					if (rows.length) {
+						var pass_check = rows[0].vmsecret;
+						if (regtype == 'password') {
+							var pass_check_test = pass_check;
+						}
+						if (regtype == 'hash') {
+							var pass_check_test = hashes[login];
+							//console.log(func.endTime() +func.var_dump(hashes));
+						}
+						
+						if (password === pass_check_test) {
+							hashes[login] = id;
+							var msg = JSON.stringify({
+								auth: 1,
+								hash: id
+							})
+							ws.emit('auth', msg);
+							console.log(func.endTime() + chalk.green('  CLIENT  PASSED  ') + '  WITH ID  ' + ws.id + '  AND LOGIN  ' + login + '  AND PASSWORD  ' + password);
+							var userobj = [login, id, password];
+							console.log(userobj)
+							registered[ws.id] = userobj;
+							console.log(func.endTime() + "  REGISTERED USERS  " + func.var_dump(registered));
+							} else {
+							console.log(func.endTime() + chalk.red('  CLIENT  DENIED  ') + '  WITH ID  ' + ws.id + '  AND LOGIN  ' + login + '  AND PASSWORD  ' + password);
+							ws.emit('auth', 0);
+						}
+						} else {
+						console.log(func.endTime() + chalk.red('  CLIENT  DENIED  ') + '  WITH ID  ' + ws.id + '  AND LOGIN  ' + login + '  AND PASSWORD  ' + password);
+						ws.emit('auth', 0);
+					}
+				});
+				} catch (err) {
+				console.log(func.endTime() + '  ERROR ' + err.name + ":  " + err.message + "  " + err.stack);
+			}
+		}
+	});
+	///////////////////////////////////// Chat
+	ws.on('chat', function (text) {
+		if (func.check_reg(ws.id, registered)) {
+			//console.log(func.endTime()+chalk.red('  CHAT  ') + text);
+			func.sendall('chat', text, registered, clients);
+		}
+	});
+	///////////////////////////////////// Refresh
+	ws.on('refresh', function () {
+		if (func.check_reg(ws.id, registered)) {
+			connection.query('SELECT `id`, `name`,`status`,`fullname` FROM `sip_buddies` ORDER BY `name` DESC', function (err, rows, fields) {
+				if (err)
+				throw err;
+				
+				var message = JSON.stringify({
+					type: 'refresh',
+					text: rows
+				})
+				
+				var msg = JSON.stringify({
+					from: 'ast',
+					text: message
+				})
+				
+				console.log(func.endTime() + "  USERS STATUS LIST GENERATED ");
+				ws.emit('ast', msg);
+				
+				
+			});
+		}
+	});
+	///////////////////////////////////// RefreshCalls
+	ws.on('refreshcalls', function () {
+		if (func.check_reg(ws.id, registered)) {
+			connection.query('SELECT * from `crm_calls` ORDER BY `date` DESC', function (err, rows, fields) {
+				if (err)
+				throw err;
+				var message = {};
+				
+				var go = JSON.stringify({
+					type: 'refreshcalls',
+					text: rows
+				})
+				console.log(func.endTime() + "  CALL LIST GENERATED ");
+				var msg = JSON.stringify({
+					from: 'ast',
+					text: go
+				})
+				ws.emit('ast', msg);
+			});
+		}
+	});
+	///////////////////////////////////// Call
+	ws.on('call', function (text) {
+		if (func.check_reg(ws.id, registered)) {
+			var number = incomingMessage.to;
+			
+			registered.forEach(function (key) {
+				
+				var key1 = key.split('_');
+				var key2 = key1[0];
+				var key3 = key1[1];
+				if (key2 === id) {
+					var key4 = 'SIP/' + key3;
+					
+					var sql2 = 'SELECT `accountcode` FROM `sip_buddies` WHERE `name`=' + key3.toString();
+					
+					connection.query(sql2, function (err, rows, fields) {
+						if (err)
+						throw err;
+						
+						var acc = rows[0].accountcode;
+						
+						console.log(func.endTime() + '  USER  ' + key3 + ' CALLED TO ' + number + " " + id);
+						ami.action({
+							'action': 'originate',
+							'account': acc,
+							'channel': key4,
+							'context': 'DLPN_dialplan_ext',
+							'exten': number,
+							'priority': 1,
+							'Variable': 'faxname=1',
+							'Callerid': key3
+							
+						}, function (err, res) {});
+					});
+				}
+			});
+		}
+	});
+	///////////////////////////////////// Logout
+	ws.on('logout', function () {
+		if (func.check_reg(ws.id, registered)) {
+			delete registered[ws.id];
+			console.log(func.endTime() + chalk.magenta('  CLIENT LOGOUT  ') + ws.id);
+			console.log(func.endTime() + "  REGISTERED USERS  " + func.var_dump(registered));
+		}
+	});
+	//////////////////////////////////// Disconnect
+	ws.on('disconnect', function () {
+		delete clients[ws.id];
+		delete registered[ws.id];
+		console.log(func.endTime() + chalk.blue('  CONNECTION CLOSED  ') + ws.id);
+		console.log(func.endTime() + "  REGISTERED USERS  " + func.var_dump(registered));
+	});
+	///////////////////////////////////// End of Socket.io
+})
