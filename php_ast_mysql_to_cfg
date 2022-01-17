@@ -1,0 +1,80 @@
+function writecfg_mac($data_mac)
+		{
+				// array(1) {
+				  // [0]=>
+				  // array(5) {
+					// ["user_name"]=>
+					// string(5) "sssss"
+					// ["password"]=>
+					// string(11) "90pLTzap1r5"
+					// ["user_mac"]=>
+					// string(12) "805ec1090297"
+					// ["number"]=>
+					// string(4) "5000"
+					// ["vendor"]=>
+					// string(6) "123456"
+				  // }
+				// }
+
+			require_once 'shared_methods.php';
+			$shared = new shared_methods;
+			$connect = $shared->connectBase();
+			foreach($data_mac as $key=>$value){
+				
+				if ($value["user_mac"]!=="" and $value["user_mac"]!==null and $value["vendor"]!=="" and $value["vendor"]!=="NO_MODEL" and $value["vendor"]!==null){
+					
+					$query = "SELECT * FROM `auto_config_templates` WHERE `type` = 'mac' AND `modelid` = ".$value["vendor"]; 
+					$result=mysqli_query($connect,$query);
+					
+					while ($row=mysqli_fetch_array($result))
+					{
+						
+						$str=$row["value"];
+						$serverip=$this -> settings("serverip");
+						$str = str_replace('[sip_serverip]', $serverip , $str);
+						$str = str_replace('[sip_usernum]', $value["number"] , $str);
+						$str = str_replace('[sip_userpass]', $value["password"] , $str);
+						$str = str_replace('[sip_usename]', $value["user_name"] , $str);
+						$path = $this -> settings($row["protocol"]);
+						$name = $row["configname"];
+						$name = str_replace('[MAC]', strtoupper($value["user_mac"]) , $name);
+						
+						//var_dump($name);
+						file_put_contents($path.$name, $str);
+						
+					}
+					
+				}
+			}
+		}
+		
+		
+		function writecfg_mac_all($connect)
+		{
+			require_once 'shared_methods.php';
+			$shared = new shared_methods;
+			$connect = $shared->connectBase();
+			$sql_mac="SELECT `fullname`,`mac`,`name`,`secret`,`modelid` FROM `sip_buddies`";
+			$result_mac = mysqli_query($connect,$sql_mac);
+			
+			while ($row_mac=mysqli_fetch_array($result_mac))
+			{
+				$user_mac=$row_mac["mac"];
+				$user_name=$row_mac["fullname"];
+				$number=$row_mac["name"];
+				$password=$row_mac["secret"];
+				$modelid=$row_mac["modelid"];
+				
+				if ($user_mac!=="" and $modelid!=="")
+				{
+					$data_mac[] = [
+					"user_name" => $user_name,
+					"password" => $password,
+					"user_mac" => $user_mac,
+					"number" => $number,
+					"vendor" => $modelid
+					];
+				}
+			}
+			$this -> writecfg_mac($data_mac);
+		}
